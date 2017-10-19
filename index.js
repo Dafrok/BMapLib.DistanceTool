@@ -25,7 +25,7 @@
 })(this, function() {
 
     var baidu = baidu || {guid : "$BAIDU$"};
-    var context = {}
+    var context = {};
     (function() {
         // 一些页面级别唯一的属性，需要挂载在window[baidu.guid]上
         context[baidu.guid] = {};
