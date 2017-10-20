@@ -531,6 +531,166 @@
             return;
         }
         
+
+        /**
+         * OperationMask，透明覆盖层，在地图上进行鼠标绘制操作时使用
+         */
+        var OperationMask = this.OperationMask = {
+            /**
+             * map对象
+             * @type {Map}
+             */
+            _map : null,
+
+            /**
+             * HTML字符串
+             * @type {String}
+             */
+            _html : "<div style='background:transparent url(http://api.map.baidu.com/images/blank.gif);position:absolute;left:0;top:0;width:100%;height:100%;z-index:1000' unselectable='on'></div>",
+
+            /**
+             * html元素
+             * @type {HTMLElement}
+             */
+            _maskElement : null,
+
+            /**
+             * 鼠标指针
+             * @type {String}
+             */
+            _cursor: 'default',
+
+            /**
+             * 操作层是否在使用中
+             * @type {Boolean}
+             */
+            _inUse: false,
+
+            /**
+             * 透明覆盖层的显示
+             *
+             * @param {Map} map map对象
+             * @return 无返回值
+             */
+            show : function(map) {
+                if (!this._map) {
+                    this._map = map;
+                }
+                this._inUse = true;
+                if (!this._maskElement) {
+                    this._createMask(map);
+                }
+                this._maskElement.style.display = 'block';
+            },
+
+            /**
+             * 创建覆盖层
+             *
+             * @param {Map} map map对象
+             * @return 无返回值
+             */
+            _createMask : function(map) {
+                this._map = map;
+                if (!this._map) {
+                    return;
+                }
+                baidu.insertHTML(this._map.getContainer(), "beforeEnd", this._html);
+                var elem = this._maskElement = this._map.getContainer().lastChild;
+
+                var stopAndPrevent = function(e) {
+                    stopBubble(e);
+                    return baidu.preventDefault(e);
+                }
+                baidu.on(elem, 'mouseup', function(e) {
+                    if (e.button == 2) {
+                        stopAndPrevent(e);
+                    }
+                });
+                baidu.on(elem, 'contextmenu', stopAndPrevent);
+                elem.style.display = 'none';
+            },
+
+            /**
+             * 获取当前绘制点的地理坐标
+             *
+             * @param {Event} e e对象
+             * @param {Boolean} n 是否向上查到相对于地图container元素的坐标位置
+             * @return Point对象的位置信息
+             */
+            getDrawPoint : function(e, n) {
+                e = global.event || e;
+                var x = e.layerX || e.offsetX || 0;
+                var y = e.layerY || e.offsetY || 0;
+                var t = e.target || e.srcElement;
+                if (t != OperationMask.getDom(this._map) && n == true) {
+                    while (t && t != this._map.getContainer()) {
+                        if (!(t.clientWidth == 0 && 
+                            t.clientHeight == 0 && 
+                            t.offsetParent && 
+                            t.offsetParent.nodeName.toLowerCase() == 'td')) {
+                                x += t.offsetLeft;
+                                y += t.offsetTop;
+                        }
+                        t = t.offsetParent;
+                    }
+                }
+
+                if (t != OperationMask.getDom(this._map) && 
+                    t != this._map.getContainer()) {
+                        return;
+                }
+                if (typeof x === 'undefined' || 
+                    typeof y === 'undefined') {
+                        return;
+                }
+                if (isNaN(x) || isNaN(y)) {
+                    return;
+                }
+                return this._map.pixelToPoint(new BMap.Pixel(x, y));
+            },
+
+            /**
+             * 透明覆盖层的隐藏
+             *
+             * @return 无返回值
+             */
+            hide : function() {
+                if (!this._map) {
+                    return;
+                }
+                this._inUse = false;
+                if (this._maskElement) {
+                    this._maskElement.style.display = 'none';
+                }
+            },
+
+            /**
+             * 获取HTML容器
+             *
+             * @param {Map} map map对象
+             * @return HTML容器元素
+             */
+            getDom : function(map) {
+                if (!this._maskElement) {
+                    this._createMask(map);
+                }
+                return this._maskElement;
+            },
+
+            /**
+             * 设置鼠标样式
+             *
+             * @type {String} cursor 鼠标样式
+             * @return 无返回值
+             */
+            _setCursor : function(cursor) {
+                this._cursor = cursor || 'default';
+                if (this._maskElement) {
+                    this._maskElement.style.cursor = this._cursor;                
+                }
+            }
+        };
+
         /**
          * map对象
          * @private
@@ -779,6 +939,7 @@
         // 设置鼠标样式
         this._setCursor(this._opts.cursor);
         var me = this;
+        var OperationMask = this.OperationMask;
         // 在装载地图的页面元素上，绑定鼠标移动事件
         baidu.on(this._map.getContainer(), "mousemove", function(e){
             if (!me._isOpen) {
@@ -816,17 +977,17 @@
      * myDistanceToolObject.open();
      */
     DistanceTool.prototype.open = function(){
+        var OperationMask = this.OperationMask;
         // 判断测距状态是否已经开启
         if (this._isOpen == true){
             return true;
         }
         // 已有其他地图上的鼠标操作工具开启
-        if (global.BMapLib && !!global.BMapLib._toolInUse) {
+        if (DistanceTool._toolInUse) {
             return;
         } else {
             this._isOpen = true;
-            global.BMapLib = global.BMapLib || {};
-            global.BMapLib._toolInUse = true;
+            DistanceTool._toolInUse = true;
         }
 
         // 判断是否是否在移动过程中
@@ -1195,11 +1356,12 @@
      * myDistanceToolObject.close();
      */
     DistanceTool.prototype.close = function(){
+        var OperationMask = this.OperationMask;
         if (this._isOpen == false){
             return;
         }
         this._isOpen = false;
-        BMapLib._toolInUse = false;
+        DistanceTool._toolInUse = false;
 
         if (this._mapMoving){
             delete this._mapMoving;
@@ -1243,6 +1405,7 @@
      * @return 无返回值
      */
     DistanceTool.prototype._clearCurData = function(){
+        var OperationMask = this.OperationMask;
         for (var i = 0, l = this._points.length; i < l; i ++){
             if (this._points[i].disLabel){
                 this._points[i].disLabel.remove();
@@ -1362,6 +1525,7 @@
      * @return 没有返回值
      */
     DistanceTool.prototype._setCursor = function(cursor){
+        var OperationMask = this.OperationMask;
         // 由于webkit内核浏览器下，cursor设置后默认不会居中，所以需要对偏移值进行设置
         var csr = 
             /webkit/.test(navigator.userAgent.toLowerCase()) ?
@@ -1601,167 +1765,6 @@
                 return false;
         }
         return true;
-    };
-
-
-    /**
-     * OperationMask，透明覆盖层，在地图上进行鼠标绘制操作时使用，
-     * 闭包，对外不暴露
-     */
-    var OperationMask = {
-        /**
-         * map对象
-         * @type {Map}
-         */
-        _map : null,
-
-        /**
-         * HTML字符串
-         * @type {String}
-         */
-        _html : "<div style='background:transparent url(http://api.map.baidu.com/images/blank.gif);position:absolute;left:0;top:0;width:100%;height:100%;z-index:1000' unselectable='on'></div>",
-
-        /**
-         * html元素
-         * @type {HTMLElement}
-         */
-        _maskElement : null,
-
-        /**
-         * 鼠标指针
-         * @type {String}
-         */
-        _cursor: 'default',
-
-        /**
-         * 操作层是否在使用中
-         * @type {Boolean}
-         */
-        _inUse: false,
-
-        /**
-         * 透明覆盖层的显示
-         *
-         * @param {Map} map map对象
-         * @return 无返回值
-         */
-        show : function(map) {
-            if (!this._map) {
-                this._map = map;
-            }
-            this._inUse = true;
-            if (!this._maskElement) {
-                this._createMask(map);
-            }
-            this._maskElement.style.display = 'block';
-        },
-
-        /**
-         * 创建覆盖层
-         *
-         * @param {Map} map map对象
-         * @return 无返回值
-         */
-        _createMask : function(map) {
-            this._map = map;
-            if (!this._map) {
-                return;
-            }
-            baidu.insertHTML(this._map.getContainer(), "beforeEnd", this._html);
-            var elem = this._maskElement = this._map.getContainer().lastChild;
-
-            var stopAndPrevent = function(e) {
-                stopBubble(e);
-                return baidu.preventDefault(e);
-            }
-            baidu.on(elem, 'mouseup', function(e) {
-                if (e.button == 2) {
-                    stopAndPrevent(e);
-                }
-            });
-            baidu.on(elem, 'contextmenu', stopAndPrevent);
-            elem.style.display = 'none';
-        },
-
-        /**
-         * 获取当前绘制点的地理坐标
-         *
-         * @param {Event} e e对象
-         * @param {Boolean} n 是否向上查到相对于地图container元素的坐标位置
-         * @return Point对象的位置信息
-         */
-        getDrawPoint : function(e, n) {
-            e = global.event || e;
-            var x = e.layerX || e.offsetX || 0;
-            var y = e.layerY || e.offsetY || 0;
-            var t = e.target || e.srcElement;
-            if (t != OperationMask.getDom(this._map) && n == true) {
-                while (t && t != this._map.getContainer()) {
-                    if (!(t.clientWidth == 0 && 
-                         t.clientHeight == 0 && 
-                         t.offsetParent && 
-                         t.offsetParent.nodeName.toLowerCase() == 'td')) {
-                            x += t.offsetLeft;
-                            y += t.offsetTop;
-                    }
-                    t = t.offsetParent;
-                }
-            }
-
-            if (t != OperationMask.getDom(this._map) && 
-                t != this._map.getContainer()) {
-                    return;
-            }
-            if (typeof x === 'undefined' || 
-                typeof y === 'undefined') {
-                    return;
-            }
-            if (isNaN(x) || isNaN(y)) {
-                return;
-            }
-            return this._map.pixelToPoint(new BMap.Pixel(x, y));
-        },
-
-        /**
-         * 透明覆盖层的隐藏
-         *
-         * @return 无返回值
-         */
-        hide : function() {
-            if (!this._map) {
-                return;
-            }
-            this._inUse = false;
-            if (this._maskElement) {
-                this._maskElement.style.display = 'none';
-            }
-        },
-
-        /**
-         * 获取HTML容器
-         *
-         * @param {Map} map map对象
-         * @return HTML容器元素
-         */
-        getDom : function(map) {
-            if (!this._maskElement) {
-                this._createMask(map);
-            }
-            return this._maskElement;
-        },
-
-        /**
-         * 设置鼠标样式
-         *
-         * @type {String} cursor 鼠标样式
-         * @return 无返回值
-         */
-        _setCursor : function(cursor) {
-            this._cursor = cursor || 'default';
-            if (this._maskElement) {
-                this._maskElement.style.cursor = this._cursor;                
-            }
-        }
     };
 
     /**
